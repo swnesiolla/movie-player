@@ -297,8 +297,32 @@
         const quality = urlParams.get('quality') || '720p';
         const season = urlParams.get('season');
         const episode = urlParams.get('episode');
+        
+        // Субтитры (формат: {"en":"https://...", "ru":"https://..."})
+        const subtitlesParam = urlParams.get('subtitles');
+        let subtitles = {};
+        if (subtitlesParam) {
+            try {
+                subtitles = JSON.parse(decodeURIComponent(subtitlesParam));
+                console.log('📝 Субтитры получены:', Object.keys(subtitles));
+            } catch (e) {
+                console.error('Ошибка парсинга субтитров:', e);
+            }
+        }
+        
+        // Качества (формат: {"360p":"https://...", "720p":"https://..."})
+        const qualitiesParam = urlParams.get('qualities');
+        let qualities = {};
+        if (qualitiesParam) {
+            try {
+                qualities = JSON.parse(decodeURIComponent(qualitiesParam));
+                console.log('📺 Качества получены:', Object.keys(qualities));
+            } catch (e) {
+                console.error('Ошибка парсинга качеств:', e);
+            }
+        }
 
-        console.log('📥 Параметры:', { videoUrl, title, audio, quality, season, episode });
+        console.log('📥 Параметры:', { videoUrl, title, audio, quality, season, episode, subtitles: Object.keys(subtitles), qualities: Object.keys(qualities) });
 
         // ========================================
         // ЭЛЕМЕНТЫ
@@ -353,6 +377,50 @@
                 console.log('🎬 Инициализация Plyr плеера...');
                 playerEl.src = videoUrl;
                 
+                // Подготавливаем источники для разных качеств
+                let sources = [];
+                let defaultQuality = 720;
+                
+                if (Object.keys(qualities).length > 0) {
+                    // Если есть разные качества - добавляем их все
+                    for (let [qual, url] of Object.entries(qualities)) {
+                        let size = parseInt(qual);
+                        sources.push({
+                            src: url,
+                            type: 'video/mp4',
+                            size: size
+                        });
+                        
+                        // Определяем качество по умолчанию
+                        if (qual === quality || qual.includes(quality)) {
+                            defaultQuality = size;
+                        }
+                    }
+                    
+                    console.log('📺 Доступные качества:', sources.map(s => s.size + 'p'));
+                } else {
+                    // Если качества не переданы - используем основной URL
+                    sources.push({
+                        src: videoUrl,
+                        type: 'video/mp4',
+                        size: parseInt(quality) || 720
+                    });
+                }
+                
+                // Подготавливаем субтитры для Plyr
+                let tracks = [];
+                if (Object.keys(subtitles).length > 0) {
+                    for (let [lang, url] of Object.entries(subtitles)) {
+                        tracks.push({
+                            kind: 'captions',
+                            label: lang,
+                            srclang: lang,
+                            src: url
+                        });
+                    }
+                    console.log('📝 Субтитры добавлены:', tracks.map(t => t.label));
+                }
+                
                 // Создаем Plyr плеер с настройками
                 player = new Plyr('#player', {
                     controls: [
@@ -363,15 +431,25 @@
                         'duration',
                         'mute',
                         'volume',
+                        'captions',  // Кнопка субтитров
                         'settings',
                         'pip',
                         'airplay',
                         'fullscreen'
                     ],
-                    settings: ['quality', 'speed'],
+                    settings: ['captions', 'quality', 'speed'],
                     quality: {
-                        default: parseInt(quality) || 720,
-                        options: [360, 480, 720, 1080]
+                        default: defaultQuality,
+                        options: sources.map(s => s.size),
+                        forced: true,
+                        onChange: (quality) => {
+                            console.log(`🔄 Качество изменено на ${quality}p`);
+                        }
+                    },
+                    captions: {
+                        active: false,
+                        language: 'auto',
+                        update: true
                     },
                     speed: {
                         selected: 1,
@@ -388,6 +466,13 @@
                     keyboard: { focused: true, global: false },
                     tooltips: { controls: true, seek: true }
                 });
+                
+                // Устанавливаем источники с качествами
+                player.source = {
+                    type: 'video',
+                    sources: sources,
+                    tracks: tracks  // Субтитры
+                };
 
                 // ========================================
                 // СОБЫТИЯ ПЛЕЕРА
