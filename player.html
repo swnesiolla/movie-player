@@ -689,16 +689,116 @@
         }
 
         // ========================================
+        // CLOUD STORAGE - СОХРАНЕНИЕ ПРОГРЕССА
+        // ========================================
+        const movieId = urlParams.get('id') || videoUrl;
+        const storageKey = `movie_${movieId}`;
+        let lastSaved = 0;
+        
+        // Загрузить сохраненный прогресс
+        function loadSavedProgress() {
+            if (!tg.CloudStorage) {
+                console.log('⚠️ CloudStorage недоступен');
+                return;
+            }
+            
+            tg.CloudStorage.getItem(storageKey, (error, value) => {
+                if (error) {
+                    console.error('❌ Ошибка загрузки прогресса:', error);
+                    return;
+                }
+                
+                if (value) {
+                    try {
+                        const data = JSON.parse(value);
+                        const savedTime = data.currentTime || 0;
+                        
+                        if (savedTime > 5 && player) {  // Восстанавливаем если больше 5 сек
+                            player.currentTime = savedTime;
+                            const minutes = Math.floor(savedTime / 60);
+                            const seconds = Math.floor(savedTime % 60).toString().padStart(2, '0');
+                            console.log(`🔄 Продолжаем с ${minutes}:${seconds}`);
+                            
+                            // Haptic feedback
+                            if (tg.HapticFeedback) {
+                                tg.HapticFeedback.notificationOccurred('success');
+                            }
+                        }
+                    } catch (e) {
+                        console.error('❌ Ошибка парсинга прогресса:', e);
+                    }
+                } else {
+                    console.log('ℹ️ Нет сохраненного прогресса');
+                }
+            });
+        }
+        
+        // Сохранить прогресс
+        function saveProgress() {
+            if (!tg.CloudStorage || !player) {
+                return;
+            }
+            
+            const progressData = {
+                currentTime: player.currentTime,
+                duration: player.duration,
+                title: title,
+                timestamp: Date.now()
+            };
+            
+            tg.CloudStorage.setItem(
+                storageKey,
+                JSON.stringify(progressData),
+                (error) => {
+                    if (error) {
+                        console.error('❌ Ошибка сохранения:', error);
+                    } else {
+                        console.log(`💾 Прогресс сохранён: ${Math.floor(player.currentTime)}s`);
+                    }
+                }
+            );
+        }
+
+        // ========================================
         // ЗАПУСКАЕМ ПЛЕЕР
         // ========================================
         console.log('🚀 Запуск плеера...');
         initPlayer();
+        
+        // Настроить CloudStorage после инициализации плеера
+        setTimeout(() => {
+            if (player) {
+                // Загрузить прогресс при готовности
+                player.on('ready', () => {
+                    loadSavedProgress();
+                });
+                
+                // Сохранять каждые 5 секунд
+                player.on('timeupdate', () => {
+                    const now = Date.now();
+                    
+                    if (now - lastSaved > 5000) {
+                        saveProgress();
+                        lastSaved = now;
+                    }
+                });
+                
+                // Сохранить при паузе
+                player.on('pause', () => {
+                    saveProgress();
+                });
+            }
+        }, 500);
 
         // ========================================
         // ОЧИСТКА ПРИ ЗАКРЫТИИ
         // ========================================
         window.addEventListener('beforeunload', () => {
             console.log('🧹 Очистка ресурсов...');
+            
+            // Сохранить прогресс перед закрытием
+            saveProgress();
+            
             if (player) {
                 player.destroy();
             }
