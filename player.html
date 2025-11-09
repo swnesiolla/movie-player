@@ -25,10 +25,6 @@
             background: #000;
             color: #fff;
             overflow: hidden;
-            /* Отключаем жесты браузера на iOS */
-            overscroll-behavior: none;
-            -webkit-overflow-scrolling: touch;
-            touch-action: pan-y pinch-zoom;
         }
         
         #app {
@@ -119,21 +115,9 @@
             height: 100%;
         }
         
-        /* Фикс для iPhone - предотвращаем жест "назад" */
-        .plyr__controls {
-            touch-action: pan-y pinch-zoom !important;
-        }
-        
-        .plyr__progress {
-            touch-action: none !important;
-            -webkit-touch-callout: none !important;
-        }
-        
-        .plyr__progress input[type="range"] {
-            touch-action: none !important;
-            -webkit-touch-callout: none !important;
-            /* Увеличиваем область касания для iPhone */
-            padding: 10px 0 !important;
+        /* Увеличиваем область касания ползунка для iPhone */
+        .plyr__controls__item.plyr__progress__container {
+            padding: 15px 0 !important;
             margin: -10px 0 !important;
         }
         
@@ -337,11 +321,15 @@
         let qualities = {};
         if (qualitiesParam) {
             try {
+                console.log('📺 Raw qualities param:', qualitiesParam.substring(0, 100));
                 qualities = JSON.parse(decodeURIComponent(qualitiesParam));
                 console.log('📺 Качества получены:', Object.keys(qualities));
+                console.log('📺 Качества детально:', qualities);
             } catch (e) {
-                console.error('Ошибка парсинга качеств:', e);
+                console.error('Ошибка парсинга качеств:', e, qualitiesParam);
             }
+        } else {
+            console.log('⚠️ Параметр qualities не передан в URL');
         }
 
         console.log('📥 Параметры:', { videoUrl, title, audio, quality, season, episode, subtitles: Object.keys(subtitles), qualities: Object.keys(qualities) });
@@ -403,9 +391,15 @@
                 let sources = [];
                 let defaultQuality = 720;
                 
+                console.log('🔍 Проверка качеств:', qualities);
+                console.log('🔍 Количество качеств:', Object.keys(qualities).length);
+                
                 if (Object.keys(qualities).length > 0) {
+                    console.log('✅ Есть качества, обрабатываем...');
                     // Если есть разные качества - добавляем их все
                     for (let [qual, url] of Object.entries(qualities)) {
+                        console.log(`🎬 Обработка качества: ${qual}`);
+                        
                         // Качество из HDRezka может быть "1080p Ultra" или "1920x1080"
                         // Извлекаем число
                         let sizeMatch = qual.match(/(\d+)x(\d+)|(\d+)p/);
@@ -417,10 +411,14 @@
                                 // Формат "1920x1080" - берем высоту
                                 size = parseInt(sizeMatch[2]);
                                 label = `${size}p (${sizeMatch[1]}x${sizeMatch[2]})`;
+                                console.log(`  → Разрешение: ${label}`);
                             } else if (sizeMatch[3]) {
                                 // Формат "1080p"
                                 size = parseInt(sizeMatch[3]);
+                                console.log(`  → Размер: ${size}p`);
                             }
+                        } else {
+                            console.log(`  ⚠️ Не удалось распарсить: ${qual}`);
                         }
                         
                         sources.push({
@@ -433,14 +431,16 @@
                         // Определяем качество по умолчанию
                         if (qual === quality || qual.includes(quality) || size === parseInt(quality)) {
                             defaultQuality = size;
+                            console.log(`  ✅ Установлено качество по умолчанию: ${size}p`);
                         }
                     }
                     
                     // Сортируем по убыванию качества
                     sources.sort((a, b) => b.size - a.size);
                     
-                    console.log('📺 Доступные качества:', sources.map(s => s.label || s.size + 'p'));
+                    console.log('📺 Финальный список качеств:', sources.map(s => s.label || s.size + 'p'));
                 } else {
+                    console.log('⚠️ Нет качеств, используем основной URL');
                     // Если качества не переданы - используем основной URL
                     sources.push({
                         src: videoUrl,
@@ -536,14 +536,7 @@
                     autopause: true,
                     resetOnEnd: false,
                     keyboard: { focused: true, global: false },
-                    tooltips: { controls: true, seek: true },
-                    // Отключаем свайп-жесты для iOS (не конфликтует с "назад")
-                    listeners: {
-                        seek: (event) => {
-                            event.preventDefault();
-                            return false;
-                        }
-                    }
+                    tooltips: { controls: true, seek: true }
                 });
                 
                 // Устанавливаем источники с качествами
@@ -564,18 +557,6 @@
                     // Haptic feedback
                     if (tg.HapticFeedback) {
                         tg.HapticFeedback.impactOccurred('light');
-                    }
-                    
-                    // Фикс для iOS - блокируем горизонтальные свайпы на ползунке
-                    const progressInput = document.querySelector('.plyr__progress input[type="range"]');
-                    if (progressInput) {
-                        progressInput.addEventListener('touchstart', (e) => {
-                            e.stopPropagation();
-                        }, { passive: false });
-                        
-                        progressInput.addEventListener('touchmove', (e) => {
-                            e.stopPropagation();
-                        }, { passive: false });
                     }
                 });
 
