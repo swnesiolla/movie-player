@@ -25,6 +25,10 @@
             background: #000;
             color: #fff;
             overflow: hidden;
+            /* Отключаем жесты браузера на iOS */
+            overscroll-behavior: none;
+            -webkit-overflow-scrolling: touch;
+            touch-action: pan-y pinch-zoom;
         }
         
         #app {
@@ -113,6 +117,24 @@
         .plyr {
             width: 100%;
             height: 100%;
+        }
+        
+        /* Фикс для iPhone - предотвращаем жест "назад" */
+        .plyr__controls {
+            touch-action: pan-y pinch-zoom !important;
+        }
+        
+        .plyr__progress {
+            touch-action: none !important;
+            -webkit-touch-callout: none !important;
+        }
+        
+        .plyr__progress input[type="range"] {
+            touch-action: none !important;
+            -webkit-touch-callout: none !important;
+            /* Увеличиваем область касания для iPhone */
+            padding: 10px 0 !important;
+            margin: -10px 0 !important;
         }
         
         .plyr__video-wrapper {
@@ -384,20 +406,40 @@
                 if (Object.keys(qualities).length > 0) {
                     // Если есть разные качества - добавляем их все
                     for (let [qual, url] of Object.entries(qualities)) {
-                        let size = parseInt(qual);
+                        // Качество из HDRezka может быть "1080p Ultra" или "1920x1080"
+                        // Извлекаем число
+                        let sizeMatch = qual.match(/(\d+)x(\d+)|(\d+)p/);
+                        let size = 720; // default
+                        let label = qual; // Оригинальное название
+                        
+                        if (sizeMatch) {
+                            if (sizeMatch[2]) {
+                                // Формат "1920x1080" - берем высоту
+                                size = parseInt(sizeMatch[2]);
+                                label = `${size}p (${sizeMatch[1]}x${sizeMatch[2]})`;
+                            } else if (sizeMatch[3]) {
+                                // Формат "1080p"
+                                size = parseInt(sizeMatch[3]);
+                            }
+                        }
+                        
                         sources.push({
                             src: url,
                             type: 'video/mp4',
-                            size: size
+                            size: size,
+                            label: label
                         });
                         
                         // Определяем качество по умолчанию
-                        if (qual === quality || qual.includes(quality)) {
+                        if (qual === quality || qual.includes(quality) || size === parseInt(quality)) {
                             defaultQuality = size;
                         }
                     }
                     
-                    console.log('📺 Доступные качества:', sources.map(s => s.size + 'p'));
+                    // Сортируем по убыванию качества
+                    sources.sort((a, b) => b.size - a.size);
+                    
+                    console.log('📺 Доступные качества:', sources.map(s => s.label || s.size + 'p'));
                 } else {
                     // Если качества не переданы - используем основной URL
                     sources.push({
@@ -410,13 +452,26 @@
                 // Подготавливаем субтитры для Plyr
                 let tracks = [];
                 if (Object.keys(subtitles).length > 0) {
+                    let index = 0;
                     for (let [lang, url] of Object.entries(subtitles)) {
+                        // Определяем код языка для srclang
+                        let langCode = 'en';
+                        if (lang.toLowerCase().includes('рус') || lang.toLowerCase().includes('russian')) {
+                            langCode = 'ru';
+                        } else if (lang.toLowerCase().includes('укр') || lang.toLowerCase().includes('ukrainian')) {
+                            langCode = 'uk';
+                        } else if (lang.toLowerCase().includes('eng') || lang.toLowerCase().includes('english')) {
+                            langCode = 'en';
+                        }
+                        
                         tracks.push({
                             kind: 'captions',
                             label: lang,
-                            srclang: lang,
-                            src: url
+                            srclang: langCode,
+                            src: url,
+                            default: index === 0  // Первые субтитры по умолчанию
                         });
+                        index++;
                     }
                     console.log('📝 Субтитры добавлены:', tracks.map(t => t.label));
                 }
@@ -438,16 +493,33 @@
                         'fullscreen'
                     ],
                     settings: ['captions', 'quality', 'speed'],
+                    i18n: {
+                        qualityLabel: {
+                            0: 'Auto'
+                        },
+                        // Показываем точное разрешение для каждого качества
+                        ...sources.reduce((acc, source) => {
+                            acc.qualityLabel = acc.qualityLabel || {};
+                            acc.qualityLabel[source.size] = source.label || `${source.size}p`;
+                            return acc;
+                        }, {})
+                    },
                     quality: {
                         default: defaultQuality,
                         options: sources.map(s => s.size),
                         forced: true,
                         onChange: (quality) => {
                             console.log(`🔄 Качество изменено на ${quality}p`);
+                            
+                            // Показываем уведомление с точным разрешением
+                            const source = sources.find(s => s.size === quality);
+                            if (source && source.label) {
+                                console.log(`📺 Разрешение: ${source.label}`);
+                            }
                         }
                     },
                     captions: {
-                        active: false,
+                        active: tracks.length > 0,  // Включаем если есть субтитры
                         language: 'auto',
                         update: true
                     },
@@ -464,7 +536,14 @@
                     autopause: true,
                     resetOnEnd: false,
                     keyboard: { focused: true, global: false },
-                    tooltips: { controls: true, seek: true }
+                    tooltips: { controls: true, seek: true },
+                    // Отключаем свайп-жесты для iOS (не конфликтует с "назад")
+                    listeners: {
+                        seek: (event) => {
+                            event.preventDefault();
+                            return false;
+                        }
+                    }
                 });
                 
                 // Устанавливаем источники с качествами
@@ -485,6 +564,18 @@
                     // Haptic feedback
                     if (tg.HapticFeedback) {
                         tg.HapticFeedback.impactOccurred('light');
+                    }
+                    
+                    // Фикс для iOS - блокируем горизонтальные свайпы на ползунке
+                    const progressInput = document.querySelector('.plyr__progress input[type="range"]');
+                    if (progressInput) {
+                        progressInput.addEventListener('touchstart', (e) => {
+                            e.stopPropagation();
+                        }, { passive: false });
+                        
+                        progressInput.addEventListener('touchmove', (e) => {
+                            e.stopPropagation();
+                        }, { passive: false });
                     }
                 });
 
@@ -522,6 +613,13 @@
                     }
                     
                     showError(message);
+                });
+                
+                // Логируем смену качества с точным разрешением
+                player.on('qualitychange', (event) => {
+                    const newQuality = event.detail.quality;
+                    const source = sources.find(s => s.size === newQuality);
+                    console.log(`🔄 Качество изменено: ${source ? source.label : newQuality + 'p'}`);
                 });
 
                 player.on('loadstart', () => {
