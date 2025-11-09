@@ -304,6 +304,33 @@
         const season = urlParams.get('season');
         const episode = urlParams.get('episode');
         
+        // API сервер (прокси для видео) - ВРЕМЕННО ОТКЛЮЧЕН
+        const API_SERVER = urlParams.get('api_server') || '';
+        const USE_PROXY = false;  // ← ОТКЛЮЧАЕМ ПРОКСИ (пока не запущен)
+        
+        // ========================================
+        // ФУНКЦИЯ ДЛЯ ОБОРАЧИВАНИЯ URL В ПРОКСИ
+        // ========================================
+        function wrapUrlWithProxy(url) {
+            if (!url) return url;
+            
+            // ВРЕМЕННО: Возвращаем оригинальный URL без прокси
+            if (!USE_PROXY || !API_SERVER) {
+                console.log(`ℹ️ Прокси отключен, используем прямой URL`);
+                return url;
+            }
+            
+            // Если URL уже проксирован - не меняем
+            if (url.includes('/api/video_proxy')) {
+                return url;
+            }
+            
+            // Оборачиваем в прокси
+            const proxyUrl = `${API_SERVER}/api/video_proxy?url=${encodeURIComponent(url)}`;
+            console.log(`🔄 Оборачиваем URL в прокси:\n  Оригинал: ${url.substring(0, 80)}...\n  Прокси: ${proxyUrl.substring(0, 80)}...`);
+            return proxyUrl;
+        }
+        
         // Субтитры (формат: {"en":"https://...", "ru":"https://..."})
         const subtitlesParam = urlParams.get('subtitles');
         let subtitles = {};
@@ -385,7 +412,10 @@
 
             try {
                 console.log('🎬 Инициализация Plyr плеера...');
-                playerEl.src = videoUrl;
+                
+                // ВАЖНО: Оборачиваем основной URL в прокси
+                const proxiedVideoUrl = wrapUrlWithProxy(videoUrl);
+                playerEl.src = proxiedVideoUrl;
                 
                 // Подготавливаем источники для разных качеств
                 let sources = [];
@@ -421,8 +451,9 @@
                             console.log(`  ⚠️ Не удалось распарсить: ${qual}`);
                         }
                         
+                        // ВАЖНО: Оборачиваем каждый URL качества в прокси
                         sources.push({
-                            src: url,
+                            src: wrapUrlWithProxy(url),
                             type: 'video/mp4',
                             size: size,
                             label: label
@@ -441,9 +472,9 @@
                     console.log('📺 Финальный список качеств:', sources.map(s => s.label || s.size + 'p'));
                 } else {
                     console.log('⚠️ Нет качеств, используем основной URL');
-                    // Если качества не переданы - используем основной URL
+                    // Если качества не переданы - используем основной URL (через прокси)
                     sources.push({
-                        src: videoUrl,
+                        src: proxiedVideoUrl,
                         type: 'video/mp4',
                         size: parseInt(quality) || 720
                     });
