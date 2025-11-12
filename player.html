@@ -304,9 +304,9 @@
         const season = urlParams.get('season');
         const episode = urlParams.get('episode');
         
-        // API сервер (прокси для видео) - ВРЕМЕННО ОТКЛЮЧЕН
-        const API_SERVER = urlParams.get('api_server') || '';
-        const USE_PROXY = false;  // ← ОТКЛЮЧАЕМ ПРОКСИ (пока не запущен)
+        // API сервер (прокси для видео)
+        const API_SERVER = urlParams.get('api_server') || window.location.origin;
+        const USE_PROXY = true;  // ✅ ВКЛЮЧАЕМ ПРОКСИ
         
         // ========================================
         // ФУНКЦИЯ ДЛЯ ОБОРАЧИВАНИЯ URL В ПРОКСИ
@@ -314,20 +314,21 @@
         function wrapUrlWithProxy(url) {
             if (!url) return url;
             
-            // ВРЕМЕННО: Возвращаем оригинальный URL без прокси
-            if (!USE_PROXY || !API_SERVER) {
-                console.log(`ℹ️ Прокси отключен, используем прямой URL`);
+            // Если URL уже проксирован - не меняем
+            if (url.includes('/api/video_proxy')) {
+                console.log(`✅ URL уже проксирован`);
                 return url;
             }
             
-            // Если URL уже проксирован - не меняем
-            if (url.includes('/api/video_proxy')) {
+            // Если прокси отключен
+            if (!USE_PROXY) {
+                console.log(`ℹ️ Прокси отключен, используем прямой URL`);
                 return url;
             }
             
             // Оборачиваем в прокси
             const proxyUrl = `${API_SERVER}/api/video_proxy?url=${encodeURIComponent(url)}`;
-            console.log(`🔄 Оборачиваем URL в прокси:\n  Оригинал: ${url.substring(0, 80)}...\n  Прокси: ${proxyUrl.substring(0, 80)}...`);
+            console.log(`🔄 Оборачиваем URL в прокси:\n  Оригинал: ${url.substring(0, 60)}...\n  Прокси: ${proxyUrl.substring(0, 80)}...`);
             return proxyUrl;
         }
         
